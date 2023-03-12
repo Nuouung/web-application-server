@@ -55,7 +55,61 @@ if (firstLine.split(" ")[1].equals("/index.html") && firstLine.split(" ")[0].equ
 ```
 
 ### 요구사항 2 - get 방식으로 회원가입
-* 
+
+* 요구사항 1에서 개선사항이 조금 생겼다. index 페이지를 요청받는 정보와 회원가입 데이터를 요청받는 정보들이 분기되는 등 서버에 요구되는 요청의 스펙이 많아지면서 RequestHandler에 요청 응답을 전담하는 로직을 작성하는 기존의 방식이 너무 지저분하게 느껴진 것이었다. controller라는 패키지를 새로 만든 후 각각의 기능을 담당하는 별도의 컨트롤러 객체를 생성해주었다. 그리고 RequestHandler에서는 아래와 같이 컨트롤러 객체를 호출하는 방식으로 적용했다.
+```
+private final IndexController indexController = new IndexController();
+private final SignupController signupController = new SignupController();
+
+...
+
+// 위에서부터 우선적으로 적용 (ex. 라우팅 경로가 겹치는 경우 위의 것이 우선적으로 적용됨)
+indexController.route(httpRequest, dos);
+signupController.route(httpRequest, dos);
+```
+* 두 번째 개선사항은 GET 방식의 요청에서 쿼리파라미터가 들어오는 스펙이 새로 생기면서 HttpRequest 객체를 수정한 부분이었다. HttpRequest 객체에서 HTTP 요청 메시지를 파싱할 때, 첫 번째 줄에 쿼리파라미터를 파악해 객체 내에 필드로 바인딩하는 방식을 적용했다. 이를 위해 queryStringMap이라는 HashMap 필드를 적용했는데, 쿼리스트링을 객체 내에 담는 과정은 쉬우나 디버깅 툴을 이용하지 않으면 특정 시점에 HttpRequest가 어떤 쿼리 스트링을 가지고 있는지 파악하기 어려우므로 꺼내 쓰는게 상당히 부담될 것 같은 느낌이 들었다. 이 부분은 코드가 확장되면서 개선의 여지가 필요할 것으로 보인다.
+```
+private Map<String, String> queryStringMap;
+
+...
+
+queryStringMap = parseQueryString(sArray);
+
+private Map<String, String> parseQueryString(String[] sArray) {
+    return (sArray[1].split("\\?").length > 1) ?
+            parseQueryString(sArray[1].split("\\?")[1]) :
+            new HashMap<>();
+}
+
+private Map<String, String> parseQueryString(String target) {
+    Map<String, String> queryStringMap = new HashMap<>();
+
+    String[] queryStrings = target.split("&");
+    for (String queryString : queryStrings)
+        queryStringMap.put(queryString.split("=")[0], queryString.split("=")[1]);
+
+    return queryStringMap;
+}
+```
+* 위와 같이 코드를 개선하고 새로 만든 signupController에서 회원가입에 필요한 로직을 작성했다. 회원가입 form 페이지로 이동하는 메소드와, 회원가입을 수행하는 메소드 두 개를 작성했고 회원가입 수행 시에는 RequestHandler에서 생성한 HttpRequest 객체 내부의 회원 정보를 queryStringMap에서 추출해 도메인 객체에 바인딩 하는 작업을 해주었다. 이후 도메인 객체는 DataBase 클래스에 의해 메모리상에 저장되는 방식으로 회원가입을 완료하는 방식으로 진행되었다.
+```
+private void signupPageGet(HttpRequest request, DataOutputStream dos) {
+    try {
+        File file = new File("./webapp" + request.getRequestURI());
+        byte[] body = Files.readAllBytes(file.toPath());
+        HttpResponseUtils.response200Header(dos, body.length, log);
+        HttpResponseUtils.responseBody(dos, body, log);
+    } catch (IOException e) {
+        log.error(e.getMessage());
+    }
+}
+
+private void signupPost(HttpRequest request, DataOutputStream dos) {
+    Map<String, String> queryStringMap = request.getQueryStringMap();
+    User user = new User(queryStringMap.get("userId"), queryStringMap.get("password"), queryStringMap.get("name"), queryStringMap.get("email"));
+    DataBase.addUser(user);
+}
+```
 
 ### 요구사항 3 - post 방식으로 회원가입
 * 

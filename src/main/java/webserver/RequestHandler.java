@@ -1,18 +1,26 @@
 package webserver;
 
+import db.DataBase;
+import model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import util.HttpResponseUtils;
+import webserver.controller.IndexController;
+import webserver.controller.SignupController;
 
 import java.io.*;
 import java.net.Socket;
-import java.net.SocketException;
-import java.nio.file.Files;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class RequestHandler extends Thread {
 
     private static final Logger log = LoggerFactory.getLogger(RequestHandler.class);
 
     private final Socket connection;
+
+    private final IndexController indexController = new IndexController();
+    private final SignupController signupController = new SignupController();
 
     public RequestHandler(Socket connectionSocket) {
         this.connection = connectionSocket;
@@ -24,43 +32,24 @@ public class RequestHandler extends Thread {
 
         try (InputStream in = connection.getInputStream(); OutputStream out = connection.getOutputStream()) {
             // TODO 사용자 요청에 대한 처리는 이 곳에서 구현하면 된다.
-            BufferedReader br = new BufferedReader(new InputStreamReader(in));
+            HttpRequest httpRequest = new HttpRequest(in);
             DataOutputStream dos = new DataOutputStream(out);
 
-            String firstLine = br.readLine();
+            // 위에서부터 우선적으로 적용 (ex. 라우팅 경로가 겹치는 경우 위의 것이 우선적으로 적용됨)
+            indexController.route(httpRequest, dos);
+            signupController.route(httpRequest, dos);
 
-            if (firstLine.split(" ")[1].equals("/index.html") && firstLine.split(" ")[0].equals("GET")) {
-                File file = new File("C:\\Users\\이진석\\Desktop\\서랍\\코딩\\자바 웹 프로그래밍 next step\\web-application-server\\webapp\\index.html");
-                byte[] body = Files.readAllBytes(file.toPath());
-                response200Header(dos, body.length);
-                responseBody(dos, body);
-                return;
+            // default
+            List<String> userInfoList = DataBase.findAll().stream().map(User::toString).collect(Collectors.toList());
+
+            StringBuilder sb = new StringBuilder();
+            for (String userInfo : userInfoList) {
+                sb.append(userInfo).append("\n").append("\n").append("\n");
             }
 
-            byte[] body = "Hello World".getBytes();
-            response200Header(dos, body.length);
-            responseBody(dos, body);
-
-        } catch (IOException e) {
-            log.error(e.getMessage());
-        }
-    }
-
-    private void response200Header(DataOutputStream dos, int lengthOfBodyContent) {
-        try {
-            dos.writeBytes("HTTP/1.1 200 OK \r\n");
-            dos.writeBytes("Content-Type: text/html;charset=utf-8\r\n");
-            dos.writeBytes("Content-Length: " + lengthOfBodyContent + "\r\n");
-            dos.writeBytes("\r\n");
-        } catch (IOException e) {
-            log.error(e.getMessage());
-        }
-    }
-
-    private void responseBody(DataOutputStream dos, byte[] body) {
-        try {
-            dos.write(body, 0, body.length);
-            dos.flush();
+            byte[] body = sb.toString().getBytes();
+            HttpResponseUtils.response200Header(dos, body.length, log);
+            HttpResponseUtils.responseBody(dos, body, log);
         } catch (IOException e) {
             log.error(e.getMessage());
         }
