@@ -19,7 +19,7 @@ public class SignupController {
 
     public void route(HttpRequest request, DataOutputStream dos) {
         if (request.getMethod().equals("GET") && request.getRequestURI().equals("/user/form.html")) signupPageGet(request, dos);
-        if (request.getMethod().equals("GET") && request.getRequestURI().equals("/user/create")) signupPost(request, dos);
+        if (request.getMethod().equals("POST") && request.getRequestURI().equals("/user/create")) signupPost(request, dos);
     }
 
     private void signupPageGet(HttpRequest request, DataOutputStream dos) {
@@ -34,8 +34,13 @@ public class SignupController {
     }
 
     private void signupPost(HttpRequest request, DataOutputStream dos) {
-        Map<String, String> queryStringMap = request.getQueryStringMap();
-        User user = new User(queryStringMap.get("userId"), queryStringMap.get("password"), queryStringMap.get("name"), queryStringMap.get("email"));
+        Map<String, String> modelAttributes = request.getModelAttributes();
+        User user = new User(modelAttributes.get("userId"), modelAttributes.get("password"), modelAttributes.get("name"), modelAttributes.get("email"));
         DataBase.addUser(user);
+
+//        String location = request.getHeaders().get("Host") + "/index.html";
+        HttpResponseUtils.response302Header(dos, "/index.html", log);
     }
 }
+
+

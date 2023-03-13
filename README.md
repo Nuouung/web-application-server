@@ -20,7 +20,7 @@
 ```
 int available = in.available();
 byte[] request = new byte[in.available()];
-for (int i = 0; i < client.length; i++) {
+for (int i = 0; i < request.length; i++) {
     request[i] = (byte) in.read();
 }
 
@@ -112,10 +112,97 @@ private void signupPost(HttpRequest request, DataOutputStream dos) {
 ```
 
 ### 요구사항 3 - post 방식으로 회원가입
-* 
+
+* 기존에 요구사항 1번 작업을 할 때 만났던 br.readLine() 관련 문제를 다시 만났다. while 문에 들어간 readLine()이 다음 커멘드가 들어올 떄까지 무한 대기에 빠진 것. 다시 한번 웹서핑을 해보고 이번에는 chatGPT에게 해결법을 물어보면서까지 디버깅을 시도했다. 그러나 실패.
+* 결국 책에 있는 힌트 코드를 보고 코드 리펙토링을 시도했다. while (!line.equals(""))로 두고 while문 내부에서 br.readLine으로 최신화해주면 무한 대기에 빠지지 않는다는 상태를 확인했지만, 영... 찝찝한 마음을 감출 수는 없었다. 그러나 이렇다 할 방법이 없었으므로, 그냥 넘어갔다.
+* HttpRequest 클래스에 Http 요청 메시지의 바디 데이터를 기록할 수 있는 로직을 추가적으로 작성했다. content-length가 있는 경우에만 바인딩하도록 작업했는데, 아마 데이터가 json으로 들어오거나 raw로 들어오거나 하는 상황에서는 nullPointerException이 날 확률이 매우 매우 높다(아마 form 형태가 아니면 전부 에러가 날 거다). 일단은 실력 부족으로 리펙토링 할 엄두가 나지 않아서... 이것도 패스
+* 코드는 아래와 같은 부분이 추가되었다.
+```
+public HttpRequest(InputStream in) throws IOException {
+    BufferedReader br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+
+    String line = br.readLine();
+    parseFirstHeader(line);
+
+    parseHeaders(br, line);
+
+    if (headers.get("Content-Length") != null) {
+        body = IOUtils.readData(br, Integer.parseInt(headers.get("Content-Length")));
+        modelAttributes = parseValues(body);
+    }
+}
+
+...
+
+private void parseHeaders(BufferedReader br,String line) throws IOException {
+    headers = new HashMap<>();
+
+    while (!line.equals("")) {
+        if (line.split(": ").length > 1)
+            headers.put(line.split(": ")[0], line.split(": ")[1]);
+        else if (line.split(":").length > 1)
+            headers.put(line.split(":")[0], line.split(":")[1]);
+
+        line = br.readLine();
+    }
+}
+
+...
+
+private Map<String, String> parseValues(String target) { // 여기에서 아마 에러가 날거다.
+    if (target == null || target.equals(""))
+        return Maps.newHashMap();
+
+    Map<String, String> queryStringMap = new HashMap<>();
+
+    String[] tokens = target.split("&");
+    for (String value : tokens)
+        queryStringMap.put(value.split("=")[0], value.split("=")[1]);
+
+    return queryStringMap;
+}
+```
+
+* HttpRequest를 어찌어찌 작성하고, 정신력이 소진된 너덜너덜한 상태로 html form 부분을 get에서 post로 바꾼 후 SignupController 부분을 수정해주었다. 
+```
+private void signupPost(HttpRequest request, DataOutputStream dos) {
+    Map<String, String> modelAttributes = request.getModelAttributes();
+    User user = new User(modelAttributes.get("userId"), modelAttributes.get("password"), modelAttributes.get("name"), modelAttributes.get("email"));
+    DataBase.addUser(user);
+}
+```
+
+* 느낀 점) 멀티쓰레드 환경인 탓에 static 코드들에 대한 동시성 문제도 걱정이 되고(실제로 로그를 보면 쓰레드 몇개가 왔다갔다하며 무작위로 로그를 찍는다), 내가 파악하지 못한 이상한 네트워크 요청(빈값으로 자꾸 요청이 온다. 뭔지 모르겠다. 또한 브라우저로 접근했을 때의 요청과 postman으로 요청했을 때의 요청값?이 다르다. 브라우저 접근 시에는 HttpRequest에 에러가 안뜨는데 postman으로 요청을 하면 백이면 백 에러가 남..), BufferedReader 등의 자바 IO의 일관적이지 않은 처리 과정(아마 내가 잘 모르는 부분이 있어서 발생하는 것이겠지만)이 내 지식 수준을 넘어서는 것들이라 쉽게 손을 댈 수 없을 뿐더러 작은 에러라도 나면 쉽게 건들지 못하고 몇시간을 쏟아야 하는 상황이 많이 답답했다. 에러는 왜 이리 많이 나며 또 파악하기 어려운지... 내 자신이 한없이 작아지는 느낌을 많이 받았다.
 
 ### 요구사항 4 - redirect 방식으로 이동
-* 
+* 솔직히 금방 할 수 있을 것 같았다. 컨트롤러를 요구사항 3번에서 작성을 해놨고, 302 리다이렉트 명령어만 넣어서 응답으로 보내주면 브라우저에서 자동으로 리다이렉트를 할테니 코드만 몇줄 적으면 되겠지 싶었다.
+* 그런데 생각보다 오래 걸렸을 뿐더러, 아직도 이해되지 않는 이슈를 만났다. 자바의 IO 처리에 대한 내 지식의 부족 때문인지, 아니면 네트워크 특히 HTTP에 대한 내 지신의 부족 때문인지 잘 모르겠지만 정말 어려웠다. 
+* 우선 작성한 코드는 다음과 같았으며 HttpResponseUtils에서 response302Header이라는 메소드를 만든 후 SignupController에서 해당 메소드를 실행해 주는 방식으로 진행했다.
+```
+// SignupController 로직
+private void signupPost(HttpRequest request, DataOutputStream dos) {
+    Map<String, String> modelAttributes = request.getModelAttributes();
+    User user = new User(modelAttributes.get("userId"), modelAttributes.get("password"), modelAttributes.get("name"), modelAttributes.get("email"));
+    DataBase.addUser(user);
+
+//        String location = request.getHeaders().get("Host") + "/index.html";
+    HttpResponseUtils.response302Header(dos, "/index.html", log);
+}
+
+// HttpResponseUtils 로직
+public static void response302Header(DataOutputStream dos, String location, Logger log) {
+    try {
+        dos.writeBytes("HTTP/1.1 302 Found \r\n");
+        dos.writeBytes("Location: " + location + "\r\n");
+        dos.writeBytes("\r\n");
+    } catch (IOException e) {
+        log.error(e.getMessage());
+    }
+}
+```
+
+* SignupController에서 location을 만들어서 리다이렉트될 url을 적어주는 부분이 좀 문제였는데, 처음에는 localhost:8080/index.html으로 리다이렉트 위치를 설정해줬다. 즉 Location: localhost:8080/index.html 이런 식으로 응답이 갔던 것. 문제는 이렇게는 리다이렉트가 되지 않았을 뿐더러 서버 내부에서는 소켓 에러까지 발생했다. 이유를 도저히 모르겠다.
+* 그래서 location을 /index.html로 바꿔주었더니, 리다이렉트도 정상적으로 실행되고 모든 코드가 정상적으로 실행됐다. 네트워크.... IO.... 진짜 모르겠다.
 
 ### 요구사항 5 - cookie
 * 
