@@ -5,8 +5,7 @@ import model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import util.HttpResponseUtils;
-import webserver.controller.IndexController;
-import webserver.controller.SignupController;
+import webserver.controller.*;
 
 import java.io.*;
 import java.net.Socket;
@@ -21,6 +20,9 @@ public class RequestHandler extends Thread {
 
     private final IndexController indexController = new IndexController();
     private final SignupController signupController = new SignupController();
+    private final LoginController loginController = new LoginController();
+    private final UserController userController = new UserController();
+    private final CssController cssController = new CssController();
 
     public RequestHandler(Socket connectionSocket) {
         this.connection = connectionSocket;
@@ -38,6 +40,9 @@ public class RequestHandler extends Thread {
             // 위에서부터 우선적으로 적용 (ex. 라우팅 경로가 겹치는 경우 위의 것이 우선적으로 적용됨)
             indexController.route(httpRequest, dos);
             signupController.route(httpRequest, dos);
+            loginController.route(httpRequest, dos);
+            userController.route(httpRequest, dos);
+            cssController.route(httpRequest, dos);
 
             // default
             List<String> userInfoList = DataBase.findAll().stream().map(User::toString).collect(Collectors.toList());
